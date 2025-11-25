@@ -1,6 +1,25 @@
 import asyncio
+import subprocess
+import sys
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
+
+# ------------------ Auto install Playwright + Chromium ------------------ #
+def ensure_playwright():
+    try:
+        import playwright
+    except ImportError:
+        print("Playwright not found. Installing...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright"])
+    try:
+        from playwright._impl._driver import get_driver_executable
+    except Exception:
+        print("Chromium not found. Installing...")
+        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+
+ensure_playwright()
+# ----------------------------------------------------------------------- #
+
 from playwright.async_api import async_playwright
 
 app = FastAPI()
