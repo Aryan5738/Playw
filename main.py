@@ -6,42 +6,37 @@ from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, StreamingResponse
 from typing import Optional
 
-# ==========================================
-# 🔥 AUTO-INSTALLER LOGIC (NO ERROR FIX) 🔥
-# ==========================================
-def install_playwright_browsers():
-    print("⚙️ CHECKING SYSTEM REQUIREMENTS...")
-    try:
-        # Check if we can import playwright
-        import playwright
-        print("✅ Playwright Library Found.")
-        
-        # Force install Chromium inside the script
-        # This fixes the "Executable doesn't exist" error on Render
-        print("⬇️ DOWNLOADING CHROMIUM BROWSER (This may take a minute)...")
-        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
-        print("✅ CHROMIUM INSTALLED SUCCESSFULLY!")
-        
-    except ImportError:
-        print("❌ Playwright not found! Installing...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright"])
-        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+# --- APP SETUP ---
+app = FastAPI()
 
-# Run this immediately when app starts
-install_playwright_browsers()
+# --- 1. AUTO-INSTALL ON STARTUP (The Clean Way) ---
+@app.on_event("startup")
+async def startup_event():
+    print("⚙️ SERVER STARTING: Checking Browsers...")
+    try:
+        # Check if playwright is installed
+        import playwright
+        from playwright.async_api import async_playwright
+        print("✅ Playwright found.")
+        
+        # NOTE: Hum command line se check karte hain ki browser hai ya nahi
+        # Agar nahi hai to install karte hain
+        print("⬇️ Ensuring Chromium is installed...")
+        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+        print("✅ Browser Ready!")
+    except Exception as e:
+        print(f"❌ Setup Error: {e}")
 
 from playwright.async_api import async_playwright
 
-app = FastAPI()
-
-# --- HACKER UI TEMPLATE ---
+# --- 2. HACKER UI TEMPLATE ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FB Hunter Bot (Auto-Fix)</title>
+    <title>FB Hunter Bot</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Courier New', monospace; padding: 20px; }
         .container { max-width: 800px; margin: 0 auto; }
@@ -55,7 +50,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
 <div class="container">
-    <h1>🚀 FB Hunter Bot (Auto-Download)</h1>
+    <h1>🚀 FB Hunter Bot (Fixed)</h1>
     <div class="card">
         <form action="/run" method="post" target="log_frame">
             <label>🍪 Cookie String:</label>
@@ -100,21 +95,20 @@ def parse_cookies(cookie_string):
     except: pass
     return cookies
 
-# --- BOT LOGIC ---
+# --- 3. CORE BOT LOGIC (Async Generator) ---
 async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_code):
     yield """<style>body{background:#000;color:#0f0;font-family:monospace;padding:10px}.e{color:red}.s{color:cyan;font-weight:bold}.w{color:yellow}</style>"""
-    yield f'<div>⚙️ Starting Engine...</div>'
+    yield f'<div>⚙️ Engine Started...</div>'
     
     async with async_playwright() as p:
         try:
-            # Launch with specific args for Render
+            # Render Argument Fixes
             browser = await p.chromium.launch(
                 headless=True,
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-gl-drawing-for-tests']
             )
             context = await browser.new_context()
             
-            # Cookies
             cookies = parse_cookies(cookie_string)
             if not cookies:
                 yield f'<div class="e">❌ Error: Invalid Cookies!</div>'
@@ -130,65 +124,67 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
             await page.goto(chat_url, timeout=60000)
             await page.wait_for_timeout(5000)
 
-            # --- HUNTER FUNCTION (JavaScript Force) ---
+            # --- HUNTER FUNCTION (JavaScript) ---
             async def hunt_popups():
-                # This script finds ANY button with specific text and clicks it
-                clicked = await page.evaluate("""() => {
-                    let clicked = false;
-                    
-                    // 1. Find all potential buttons
-                    let elements = document.querySelectorAll('div[role="button"], span, div[aria-label], button');
-                    
-                    for (let el of elements) {
-                        let txt = el.innerText || "";
-                        let label = el.getAttribute('aria-label') || "";
-                        
-                        // Check for targets
-                        if (txt.includes("Continue") || txt.includes("restore messages") || label === "Close" || label === "Continue") {
-                            // Ensure it's visible
-                            if (el.offsetParent !== null) {
-                                el.click();
-                                clicked = true;
+                try:
+                    clicked = await page.evaluate("""() => {
+                        let found = false;
+                        let elements = document.querySelectorAll('div[role="button"], span, div[aria-label], button');
+                        for (let el of elements) {
+                            let txt = el.innerText || "";
+                            let label = el.getAttribute('aria-label') || "";
+                            if (txt.includes("Continue") || txt.includes("restore messages") || label === "Close") {
+                                if (el.offsetParent !== null) { el.click(); found = true; }
                             }
                         }
-                    }
-                    return clicked;
-                }""")
-                if clicked: 
-                    yield f'<div class="w">⚔️ Hunter: Clicked a popup/button!</div>'
-                    await page.wait_for_timeout(2000)
+                        return found;
+                    }""")
+                    if clicked: yield f'<div class="w">⚔️ Hunter: Removed a popup!</div>'
+                except: pass
 
-            # --- PIN BYPASS ---
+            # --- PIN ENTRY ---
             if pin_code:
-                yield f'<div>🔐 Checking PIN status...</div>'
+                yield f'<div>🔐 Checking PIN...</div>'
                 try:
-                    inputs = await page.locator("input[type='tel'], input[type='password']").all()
+                    # Check multiple selector types for PIN inputs
+                    inputs = await page.locator("input[type='tel']").all()
+                    if not inputs: inputs = await page.locator("input[type='password']").all()
+                    
                     if len(inputs) >= 6:
-                        yield f'<div class="w">⚠️ PIN Required! Entering {pin_code}...</div>'
+                        yield f'<div class="w">⚠️ PIN Required! Entering code...</div>'
                         for i in range(6):
                             await inputs[i].fill(pin_code[i])
                             await page.wait_for_timeout(100)
-                        yield f'<div class="s">🔓 PIN Entered! Waiting...</div>'
+                        yield f'<div class="s">🔓 PIN Entered. Waiting...</div>'
                         await page.wait_for_timeout(5000)
                 except: pass
 
-            # --- MAIN SENDING LOOP ---
+            # --- SENDING LOOP ---
             count = 0
             running = True
             
             while running:
-                # 1. Clear Path
-                await hunt_popups()
+                # 1. Clear Path (Yielding inside helper function is tricky, so we call it and yield result manually if needed)
+                # Note: 'hunt_popups' above is async generator if it yields, but here we kept it simple or need to iterate it.
+                # Let's keep 'hunt_popups' simple.
+                try:
+                    await page.evaluate("""() => {
+                        let elements = document.querySelectorAll('div[role="button"], span, div[aria-label]');
+                        for (let el of elements) {
+                            let txt = el.innerText || "";
+                            if (txt.includes("Continue") || txt.includes("restore")) { el.click(); }
+                        }
+                    }""")
+                except: pass
                 
                 # 2. Find Box
-                # Try multiple selectors
                 box = page.locator('div[aria-label="Message"]').first
                 if not await box.is_visible():
                      box = page.locator('div[contenteditable="true"]').first
                 
                 if await box.is_visible():
                     # 3. Send
-                    await box.click(force=True) # Force click handles overlays
+                    await box.click(force=True)
                     await box.fill(message_text)
                     await page.keyboard.press("Enter")
                     
@@ -198,27 +194,38 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
                     if not infinite: running = False
                     else: await page.wait_for_timeout(delay * 1000)
                 else:
-                    yield f'<div class="e">❌ Message Box not visible. Retrying Hunter...</div>'
+                    yield f'<div class="e">❌ Message Box Hidden. Retrying...</div>'
                     await page.wait_for_timeout(3000)
 
-            yield f'<div>🏁 Finished.</div>'
+            yield f'<div>🏁 Task Finished.</div>'
             await browser.close()
 
         except Exception as e:
             yield f'<div class="e">CRITICAL ERROR: {str(e)}</div>'
+
+# --- 4. ROUTES ---
 
 @app.get("/", response_class=HTMLResponse)
 def index():
     return HTML_TEMPLATE
 
 @app.post("/run")
-async def run(cookie_string: str = Form(...), chat_url: str = Form(...), message_text: str = Form(...), 
-              delay: int = Form(2), infinite: Optional[str] = Form(None), pin_code: Optional[str] = Form(None)):
-    return StreamingResponse(bot_logic(cookie_string, chat_url, message_text, delay, infinite == "on", pin_code), media_type="text/html")
+async def run(
+    cookie_string: str = Form(...), 
+    chat_url: str = Form(...), 
+    message_text: str = Form(...), 
+    delay: int = Form(2), 
+    infinite: Optional[str] = Form(None), 
+    pin_code: Optional[str] = Form(None)
+):
+    # FIX: StreamingResponse takes the generator directly. DO NOT use 'await' here.
+    return StreamingResponse(
+        bot_logic(cookie_string, chat_url, message_text, delay, infinite == "on", pin_code), 
+        media_type="text/html"
+    )
 
 if __name__ == "__main__":
     import uvicorn
-    # Render requires reading the PORT environment variable
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-        
+    
