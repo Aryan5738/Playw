@@ -6,14 +6,24 @@ from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, StreamingResponse
 from typing import Optional
 
-# --- AUTO-INSTALLER ---
+# ==========================================
+# 1. INITIALIZE APP FIRST (Fixes NameError)
+# ==========================================
+app = FastAPI()
+
+# ==========================================
+# 2. AUTO-INSTALLER (Runs on Startup)
+# ==========================================
 @app.on_event("startup")
 async def startup_event():
     print("⚙️ SERVER STARTING...")
     try:
+        # Check imports
         import playwright
         from playwright.async_api import async_playwright
-        print("⬇️ Ensuring Chromium...")
+        
+        print("⬇️ Checking/Installing Chromium...")
+        # Force install command
         subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
         print("✅ Browser Ready!")
     except Exception as e:
@@ -21,16 +31,16 @@ async def startup_event():
 
 from playwright.async_api import async_playwright
 
-app = FastAPI()
-
-# --- UI TEMPLATE ---
+# ==========================================
+# 3. UI TEMPLATE
+# ==========================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FB Hunter Bot (Smart Logs)</title>
+    <title>FB Hunter Bot (Fixed)</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Courier New', monospace; padding: 20px; }
         .container { max-width: 800px; margin: 0 auto; }
@@ -89,19 +99,20 @@ def parse_cookies(cookie_string):
     except: pass
     return cookies
 
-# --- BOT LOGIC ---
+# ==========================================
+# 4. BOT LOGIC + DIAGNOSTICS
+# ==========================================
 async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_code):
     yield """<style>body{background:#000;color:#0f0;font-family:monospace;padding:10px}.e{color:red}.s{color:cyan;font-weight:bold}.w{color:yellow}.i{color:#58a6ff}</style>"""
-    yield f'<div>⚙️ Starting Smart Engine...</div>'
+    yield f'<div>⚙️ Engine Started...</div>'
     
     async with async_playwright() as p:
         try:
-            # Launch with specific args to imitate real browser
+            # Launch Browser
             browser = await p.chromium.launch(
                 headless=True,
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-gl-drawing-for-tests']
             )
-            # Use a real User Agent
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
             )
@@ -114,66 +125,56 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
             
             page = await context.new_page()
             
-            # 1. CHECK LOGIN STATUS
+            # --- IDENTITY CHECK ---
             yield f'<div>🌐 Opening Facebook to verify identity...</div>'
             await page.goto("https://www.facebook.com", timeout=60000)
             await page.wait_for_timeout(3000)
             
-            # Try to grab username
+            # Check Username
             try:
-                # Looking for profile link or aria-label in navigation
                 username = await page.evaluate("""() => {
-                    let el = document.querySelector('div[role="navigation"] a[href*="/me/"]'); 
-                    if(!el) el = document.querySelector('svg[aria-label] ~ span'); // Mobile view sometimes
+                    // Try finding profile name in navbar or sidebar
+                    let el = document.querySelector('div[role="navigation"] a[href*="/me/"] span'); 
+                    if(!el) el = document.querySelector('svg[aria-label] ~ span'); 
                     return el ? el.innerText : null;
                 }""")
                 
                 if username:
                     yield f'<div class="s">✅ Logged in as: {username}</div>'
                 else:
-                    # Check if login failed
                     content = await page.content()
-                    if "Log In" in content or "Create new account" in content:
-                        yield f'<div class="e">❌ LOGIN FAILED: Cookies expired or invalid.</div>'
+                    if "Log In" in content:
+                        yield f'<div class="e">❌ LOGIN FAILED: Cookies Expired!</div>'
                         await browser.close()
                         return
                     else:
-                        yield f'<div class="w">⚠️ Logged in, but Username hidden (Continuing...)</div>'
+                        yield f'<div class="w">⚠️ Logged in (Username hidden)</div>'
             except:
-                yield f'<div class="w">⚠️ Could not detect username (Continuing...)</div>'
+                yield f'<div class="w">⚠️ Could not detect username</div>'
 
-            # 2. OPEN CHAT
+            # --- OPEN CHAT ---
             yield f'<div>💬 Opening Chat URL...</div>'
             await page.goto(chat_url, timeout=60000)
             await page.wait_for_timeout(5000)
 
-            # --- SMART DIAGNOSTICS FUNCTION ---
+            # --- DIAGNOSTIC HELPER ---
             async def diagnose_screen():
-                """Checks what is blocking the bot"""
                 content = await page.content()
-                
-                if "Enter your PIN" in content or "Secure storage" in content:
-                    return "PIN_LOCK"
-                elif "Connect with" in content and "Google" in content:
-                    return "SYNC_POPUP"
-                elif "Continue" in content or "restore messages" in content:
-                    return "CONTINUE_POPUP"
-                elif "Messages are end-to-end encrypted" in content:
-                    return "CLEAN" # Should be fine
-                else:
-                    return "UNKNOWN"
+                if "Enter your PIN" in content or "Secure storage" in content: return "PIN_LOCK"
+                if "Connect with" in content and "Google" in content: return "SYNC_POPUP"
+                if "Continue" in content or "restore messages" in content: return "CONTINUE_POPUP"
+                return "UNKNOWN"
 
-            # --- POPUP BYPASS LOGIC ---
+            # --- HUNTER (Popup Clicker) ---
             async def hunt_popups():
                 clicked = await page.evaluate("""() => {
                     let clicked = false;
-                    let buttons = document.querySelectorAll('div[role="button"], span, div[aria-label], button');
+                    let elements = document.querySelectorAll('div[role="button"], span, div[aria-label], button');
                     for (let el of elements) {
                         let txt = (el.innerText || "").toLowerCase();
                         let label = (el.getAttribute('aria-label') || "").toLowerCase();
                         
                         if (txt.includes("continue") || txt.includes("restore") || label === "close") {
-                             // Ensure it's not hidden
                              if (el.offsetParent !== null) { el.click(); clicked = true; }
                         }
                     }
@@ -181,11 +182,11 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
                 }""")
                 if clicked: yield f'<div class="w">⚔️ Hunter: Removed a Popup!</div>'
 
-            # --- PIN BYPASS ---
+            # --- PIN ENTRY ---
             if pin_code:
                 status = await diagnose_screen()
                 if status == "PIN_LOCK":
-                    yield f'<div class="w">⚠️ PIN Lock Screen Detected!</div>'
+                    yield f'<div class="w">⚠️ PIN Screen Detected!</div>'
                     try:
                         inputs = await page.locator("input[type='tel'], input[type='password']").all()
                         if len(inputs) >= 6:
@@ -202,20 +203,14 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
             running = True
             
             while running:
-                # 1. Run Diagnostics
-                screen_status = await diagnose_screen()
-                
-                # 2. Take Action based on Status
-                if screen_status == "CONTINUE_POPUP":
-                    yield f'<div class="w">⚠️ Stuck on "Continue" Popup. Clicking...</div>'
+                # Diagnostics
+                status = await diagnose_screen()
+                if status == "CONTINUE_POPUP":
+                    yield f'<div class="w">⚠️ Stuck on Popup. Clicking...</div>'
                     await hunt_popups()
                     await page.wait_for_timeout(2000)
                 
-                elif screen_status == "PIN_LOCK" and not pin_code:
-                    yield f'<div class="e">❌ Stuck on PIN Screen! (Please enter PIN in settings)</div>'
-                    await page.wait_for_timeout(5000) # Wait in case user is watching
-
-                # 3. Try to Send
+                # Try Send
                 box = page.locator('div[aria-label="Message"]').first
                 if not await box.is_visible():
                      box = page.locator('div[contenteditable="true"]').first
@@ -231,12 +226,9 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
                     if not infinite: running = False
                     else: await page.wait_for_timeout(delay * 1000)
                 else:
-                    # Provide Detailed Error
-                    yield f'<div class="e">❌ Box Not Found. Status: {screen_status} (Retrying...)</div>'
+                    yield f'<div class="e">❌ Box Not Found. Status: {status}</div>'
                     await page.wait_for_timeout(3000)
-                    
-                    # Last ditch effort: blind clicks on buttons
-                    await hunt_popups()
+                    await hunt_popups() # Blind attempt
 
             yield f'<div>🏁 Finished.</div>'
             await browser.close()
@@ -244,7 +236,9 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
         except Exception as e:
             yield f'<div class="e">CRITICAL ERROR: {str(e)}</div>'
 
-# --- ROUTES ---
+# ==========================================
+# 5. ROUTES
+# ==========================================
 @app.get("/", response_class=HTMLResponse)
 def index():
     return HTML_TEMPLATE
