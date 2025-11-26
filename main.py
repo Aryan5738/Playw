@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from typing import Optional
 
 # ==========================================
-# 1. APP DEFINITION & SETUP
+# 1. APP DEFINITION
 # ==========================================
 app = FastAPI()
 
@@ -34,7 +34,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FB Hunter Bot (Final Fix)</title>
+    <title>FB Hunter (Desktop Mode)</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Courier New', monospace; padding: 20px; }
         .container { max-width: 800px; margin: 0 auto; }
@@ -48,7 +48,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
 <div class="container">
-    <h1>🚀 FB Hunter (Final Fix)</h1>
+    <h1>🖥️ FB Hunter (Desktop Force)</h1>
     <div class="card">
         <form action="/run" method="post" target="log_frame">
             <label>🍪 Cookie String:</label>
@@ -70,7 +70,7 @@ HTML_TEMPLATE = """
                     <label for="inf" style="margin:0; cursor:pointer;">Infinite Loop</label>
                 </div>
             </div>
-            <input type="submit" value="🔥 START NO ERROR">
+            <input type="submit" value="🔥 START DESKTOP MODE">
         </form>
     </div>
     <div class="card">
@@ -94,23 +94,30 @@ def parse_cookies(cookie_string):
     return cookies
 
 # ==========================================
-# 3. BOT LOGIC (FLATTENED TO FIX ERROR)
+# 3. BOT LOGIC (DESKTOP MODE)
 # ==========================================
 async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_code):
     yield """<style>body{background:#000;color:#0f0;font-family:monospace;padding:10px}.e{color:red}.s{color:cyan;font-weight:bold}.w{color:yellow}.i{color:#58a6ff}</style>"""
-    yield f'<div>⚙️ Engine Started...</div>'
+    yield f'<div>⚙️ Starting Desktop Engine...</div>'
     
     async with async_playwright() as p:
         try:
-            # Launch Browser
+            # 1. Launch Browser
             browser = await p.chromium.launch(
                 headless=True,
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-gl-drawing-for-tests']
             )
+            
+            # 2. FORCE DESKTOP CONTEXT (This fixes Mobile View)
             context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                viewport={"width": 1920, "height": 1080}, # Full HD Resolution
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                device_scale_factor=1,
+                is_mobile=False,
+                has_touch=False
             )
             
+            # Cookies
             cookies = parse_cookies(cookie_string)
             if not cookies:
                 yield f'<div class="e">❌ Error: Cookies are empty!</div>'
@@ -119,37 +126,32 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
             
             page = await context.new_page()
             
-            # --- 1. IDENTITY CHECK ---
-            yield f'<div>🌐 Verifying Identity...</div>'
+            # --- IDENTITY CHECK ---
+            yield f'<div>🌐 Opening Facebook Desktop...</div>'
             try:
-                # Fast load
                 await page.goto("https://www.facebook.com", timeout=60000, wait_until='domcontentloaded')
             except:
                 yield f'<div class="w">⚠️ Loading slow, forcing entry...</div>'
 
             await page.wait_for_timeout(3000)
 
-            # Username Check (Improved)
+            # Check Username (Desktop Selectors)
             try:
                 name = await page.evaluate("""() => {
-                    // Method 1: Title
-                    if (document.title && document.title !== "Facebook") return document.title;
-                    // Method 2: Aria Label
-                    let el = document.querySelector('svg[aria-label] + span');
-                    if (el) return el.innerText;
-                    // Method 3: Profile Link
-                    let link = document.querySelector('a[href*="/me/"] span');
-                    if (link) return link.innerText;
-                    return null;
+                    // Method 1: Left Sidebar Profile
+                    let el = document.querySelector('div[role="navigation"] a[href*="/me/"] span');
+                    // Method 2: Top Right Profile
+                    if(!el) el = document.querySelector('svg[aria-label] + span'); 
+                    return el ? el.innerText : null;
                 }""")
                 if name:
                     yield f'<div class="s">✅ Logged in as: {name}</div>'
                 else:
-                    yield f'<div class="w">⚠️ Logged in (Mobile View Active)</div>'
+                    yield f'<div class="w">⚠️ Identity Verified (Name Hidden)</div>'
             except:
                 pass
 
-            # --- 2. OPEN CHAT ---
+            # --- OPEN CHAT ---
             yield f'<div>💬 Navigating to Chat...</div>'
             try:
                 await page.goto(chat_url, timeout=90000, wait_until='domcontentloaded')
@@ -166,17 +168,17 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
                 # -----------------------------
                 # BLOCK 1: HUNTER (POPUP KILLER)
                 # -----------------------------
-                # Humne is code ko seedha yahan likh diya taaki 'await' error na aaye
                 try:
                     clicked = await page.evaluate("""() => {
                         let clicked = false;
+                        // Find all clickable buttons
                         let elements = document.querySelectorAll('div[role="button"], span, div[aria-label], button');
                         for (let el of elements) {
                             let txt = (el.innerText || "").toLowerCase();
                             let label = (el.getAttribute('aria-label') || "").toLowerCase();
                             
-                            // Check for BLOCKERS
-                            if (txt.includes("continue") || txt.includes("restore") || label === "close" || txt.includes("not now")) {
+                            // Target Blockers
+                            if (txt.includes("continue") || txt.includes("restore") || label === "close" || txt.includes("not now") || txt.includes("allow cookies")) {
                                  if (el.offsetParent !== null) { el.click(); clicked = true; }
                             }
                         }
@@ -208,14 +210,13 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
                 # -----------------------------
                 # BLOCK 3: SEND MESSAGE
                 # -----------------------------
-                # Find Box
+                # Find Box (Desktop Selectors)
                 box = page.locator('div[aria-label="Message"]').first
-                if not await box.is_visible():
-                     box = page.locator('div[contenteditable="true"]').first
                 
+                # Check Visibility
                 if await box.is_visible():
                     try:
-                        # Force Click to bypass overlays
+                        # Focus and Type
                         await box.click(force=True)
                         await box.fill(message_text)
                         await page.keyboard.press("Enter")
@@ -228,8 +229,11 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
                     except Exception as e:
                         yield f'<div class="e">❌ Send Error: {str(e)}</div>'
                 else:
-                    yield f'<div class="e">❌ Message Box Hidden (Scanning...)</div>'
-                    await page.wait_for_timeout(3000)
+                    # Detailed Error if hidden
+                    yield f'<div class="e">❌ Box Hidden. Trying to clear blockers...</div>'
+                    await page.wait_for_timeout(2000)
+                    # Scroll to bottom just in case
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
 
             yield f'<div>🏁 Finished.</div>'
             await browser.close()
@@ -253,7 +257,6 @@ async def run(
     infinite: Optional[str] = Form(None), 
     pin_code: Optional[str] = Form(None)
 ):
-    # Pass generator directly to StreamingResponse
     return StreamingResponse(
         bot_logic(cookie_string, chat_url, message_text, delay, infinite == "on", pin_code), 
         media_type="text/html"
@@ -263,4 +266,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-        
+            
