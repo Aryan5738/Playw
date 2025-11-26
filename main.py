@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from typing import Optional
 
 # ==========================================
-# 1. APP SETUP & AUTO-INSTALLER
+# 1. APP DEFINITION & SETUP
 # ==========================================
 app = FastAPI()
 
@@ -34,7 +34,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FB Hunter Bot (Turbo)</title>
+    <title>FB Hunter Bot (Final Fix)</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Courier New', monospace; padding: 20px; }
         .container { max-width: 800px; margin: 0 auto; }
@@ -48,7 +48,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
 <div class="container">
-    <h1>🚀 FB Hunter (Turbo Edition)</h1>
+    <h1>🚀 FB Hunter (Final Fix)</h1>
     <div class="card">
         <form action="/run" method="post" target="log_frame">
             <label>🍪 Cookie String:</label>
@@ -70,7 +70,7 @@ HTML_TEMPLATE = """
                     <label for="inf" style="margin:0; cursor:pointer;">Infinite Loop</label>
                 </div>
             </div>
-            <input type="submit" value="🔥 START FAST">
+            <input type="submit" value="🔥 START NO ERROR">
         </form>
     </div>
     <div class="card">
@@ -94,14 +94,15 @@ def parse_cookies(cookie_string):
     return cookies
 
 # ==========================================
-# 3. BOT LOGIC (Fixed & Fast)
+# 3. BOT LOGIC (FLATTENED TO FIX ERROR)
 # ==========================================
 async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_code):
     yield """<style>body{background:#000;color:#0f0;font-family:monospace;padding:10px}.e{color:red}.s{color:cyan;font-weight:bold}.w{color:yellow}.i{color:#58a6ff}</style>"""
-    yield f'<div>⚙️ Turbo Engine Started...</div>'
+    yield f'<div>⚙️ Engine Started...</div>'
     
     async with async_playwright() as p:
         try:
+            # Launch Browser
             browser = await p.chromium.launch(
                 headless=True,
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-gl-drawing-for-tests']
@@ -118,90 +119,103 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
             
             page = await context.new_page()
             
-            # --- 1. IDENTITY CHECK (FAST) ---
+            # --- 1. IDENTITY CHECK ---
             yield f'<div>🌐 Verifying Identity...</div>'
             try:
-                # wait_until='domcontentloaded' prevents timeout errors
+                # Fast load
                 await page.goto("https://www.facebook.com", timeout=60000, wait_until='domcontentloaded')
-            except Exception as e:
+            except:
                 yield f'<div class="w">⚠️ Loading slow, forcing entry...</div>'
 
-            # Username Grabber (More Advanced)
+            await page.wait_for_timeout(3000)
+
+            # Username Check (Improved)
             try:
-                await page.wait_for_timeout(3000)
                 name = await page.evaluate("""() => {
-                    // Method 1: Check Page Title
-                    let title = document.title;
-                    if (title && title !== "Facebook") return title;
-                    
-                    // Method 2: Check Aria Labels
+                    // Method 1: Title
+                    if (document.title && document.title !== "Facebook") return document.title;
+                    // Method 2: Aria Label
                     let el = document.querySelector('svg[aria-label] + span');
                     if (el) return el.innerText;
-                    
+                    // Method 3: Profile Link
+                    let link = document.querySelector('a[href*="/me/"] span');
+                    if (link) return link.innerText;
                     return null;
                 }""")
                 if name:
                     yield f'<div class="s">✅ Logged in as: {name}</div>'
                 else:
-                    yield f'<div class="w">⚠️ Logged in (Name hidden by mobile view)</div>'
+                    yield f'<div class="w">⚠️ Logged in (Mobile View Active)</div>'
             except:
                 pass
 
-            # --- 2. OPEN CHAT (TIMEOUT PROOF) ---
+            # --- 2. OPEN CHAT ---
             yield f'<div>💬 Navigating to Chat...</div>'
             try:
-                # Increased timeout + domcontentloaded (Crucial Fix)
                 await page.goto(chat_url, timeout=90000, wait_until='domcontentloaded')
-            except Exception as e:
-                yield f'<div class="w">⚠️ Chat load timed out, but proceeding anyway...</div>'
+            except:
+                yield f'<div class="w">⚠️ Chat load timeout (Ignoring)...</div>'
 
-            await page.wait_for_timeout(5000) # Give UI time to render
-
-            # --- DIAGNOSTICS & BYPASS ---
-            async def check_and_kill():
-                content = await page.content()
-                
-                # PIN Check
-                if pin_code and ("Enter your PIN" in content or "Secure storage" in content):
-                    yield f'<div class="w">🔐 PIN Screen Detected! Entering code...</div>'
-                    try:
-                        inputs = await page.locator("input[type='tel'], input[type='password']").all()
-                        for i in range(min(len(inputs), 6)):
-                            await inputs[i].fill(pin_code[i])
-                            await page.wait_for_timeout(100)
-                        yield f'<div class="s">🔓 PIN Submitted.</div>'
-                        await page.wait_for_timeout(4000)
-                    except: pass
-                
-                # Popup Killer (Aggressive)
-                clicked = await page.evaluate("""() => {
-                    let clicked = false;
-                    let elements = document.querySelectorAll('div[role="button"], span, div[aria-label], button');
-                    for (let el of elements) {
-                        let txt = (el.innerText || "").toLowerCase();
-                        let label = (el.getAttribute('aria-label') || "").toLowerCase();
-                        if (txt.includes("continue") || txt.includes("restore") || label === "close" || txt.includes("not now")) {
-                             if (el.offsetParent !== null) { el.click(); clicked = true; }
-                        }
-                    }
-                    return clicked;
-                }""")
-                if clicked: yield f'<div class="w">⚔️ Hunter: Smashed a Popup!</div>'
+            await page.wait_for_timeout(5000)
 
             # --- MAIN LOOP ---
             count = 0
             running = True
             
             while running:
-                await check_and_kill()
-                
-                # Find Message Box
+                # -----------------------------
+                # BLOCK 1: HUNTER (POPUP KILLER)
+                # -----------------------------
+                # Humne is code ko seedha yahan likh diya taaki 'await' error na aaye
+                try:
+                    clicked = await page.evaluate("""() => {
+                        let clicked = false;
+                        let elements = document.querySelectorAll('div[role="button"], span, div[aria-label], button');
+                        for (let el of elements) {
+                            let txt = (el.innerText || "").toLowerCase();
+                            let label = (el.getAttribute('aria-label') || "").toLowerCase();
+                            
+                            // Check for BLOCKERS
+                            if (txt.includes("continue") || txt.includes("restore") || label === "close" || txt.includes("not now")) {
+                                 if (el.offsetParent !== null) { el.click(); clicked = true; }
+                            }
+                        }
+                        return clicked;
+                    }""")
+                    if clicked:
+                        yield f'<div class="w">⚔️ Hunter: Removed a Popup!</div>'
+                        await page.wait_for_timeout(1000)
+                except:
+                    pass
+
+                # -----------------------------
+                # BLOCK 2: PIN ENTRY
+                # -----------------------------
+                if pin_code:
+                    try:
+                        content = await page.content()
+                        if "Enter your PIN" in content or "Secure storage" in content:
+                            yield f'<div class="w">🔐 PIN Screen Detected! Entering...</div>'
+                            inputs = await page.locator("input[type='tel'], input[type='password']").all()
+                            for i in range(min(len(inputs), 6)):
+                                await inputs[i].fill(pin_code[i])
+                                await page.wait_for_timeout(100)
+                            yield f'<div class="s">🔓 PIN Submitted.</div>'
+                            await page.wait_for_timeout(4000)
+                    except:
+                        pass
+
+                # -----------------------------
+                # BLOCK 3: SEND MESSAGE
+                # -----------------------------
+                # Find Box
                 box = page.locator('div[aria-label="Message"]').first
                 if not await box.is_visible():
                      box = page.locator('div[contenteditable="true"]').first
                 
                 if await box.is_visible():
                     try:
+                        # Force Click to bypass overlays
                         await box.click(force=True)
                         await box.fill(message_text)
                         await page.keyboard.press("Enter")
@@ -211,12 +225,10 @@ async def bot_logic(cookie_string, chat_url, message_text, delay, infinite, pin_
                         
                         if not infinite: running = False
                         else: await page.wait_for_timeout(delay * 1000)
-                    except:
-                        yield f'<div class="e">❌ Send Error (Retrying...)</div>'
+                    except Exception as e:
+                        yield f'<div class="e">❌ Send Error: {str(e)}</div>'
                 else:
-                    yield f'<div class="e">❌ Message Box Hidden (Scanning for blocks...)</div>'
-                    # Retry blind bypass
-                    await check_and_kill()
+                    yield f'<div class="e">❌ Message Box Hidden (Scanning...)</div>'
                     await page.wait_for_timeout(3000)
 
             yield f'<div>🏁 Finished.</div>'
@@ -241,6 +253,7 @@ async def run(
     infinite: Optional[str] = Form(None), 
     pin_code: Optional[str] = Form(None)
 ):
+    # Pass generator directly to StreamingResponse
     return StreamingResponse(
         bot_logic(cookie_string, chat_url, message_text, delay, infinite == "on", pin_code), 
         media_type="text/html"
@@ -250,4 +263,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-            
+        
