@@ -1,30 +1,33 @@
-# 1. Base Image (Python)
+# 1. Base Image
 FROM python:3.9-slim
 
-# 2. System dependencies aur Chromium install karein
-# Chromium aur Chromedriver Debian repo se install karna sabse stable hai
+# 2. System dependencies (Git zaroori hai error 128 hatane ke liye)
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    software-properties-common \
+    git \
     chromium \
     chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Environment Variables set karein
+# 3. Environment Variables
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
-# 4. Working Directory banaye
+# 4. Working Directory
 WORKDIR /app
 
-# 5. Requirements copy aur install karein
+# 5. Git "Safe Directory" Error Fix (Yeh hai Error 128 ka ilaaj)
+RUN git config --global --add safe.directory '*'
+
+# 6. Install Requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 6. Pura code copy karein
+# 7. Copy Code
 COPY . .
 
-# 7. Render PORT expose karein
-EXPOSE 8501
-
-# 8. Command to run app
-# Streamlit ko batana padta hai ki wo specific port par chale
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# 8. Start Command (Isme PORT variable dynamic rakha hai)
+# Render khud PORT environment variable deta hai, hum wahi use karenge
+CMD sh -c "streamlit run app.py --server.port=$PORT --server.address=0.0.0.0"
