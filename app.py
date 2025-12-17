@@ -57,7 +57,6 @@ manager = TaskManager()
 def parse_cookies(cookie_string):
     cookies = []
     try:
-        # Handling both Netscape format and key=value; format
         lines = cookie_string.split('\n')
         for line in lines:
             parts = line.split('\t')
@@ -78,47 +77,39 @@ def parse_cookies(cookie_string):
     except:
         return []
 
-# --- DRIVER SETUP (The Magic Part 🎩) ---
+# --- DRIVER SETUP ---
 def get_driver():
     chrome_options = Options()
     
-    # 1. HEADERS: Make it look like a Real Windows 10 PC
+    # User Agent & Window Size
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     chrome_options.add_argument(f'user-agent={user_agent}')
-    
-    # 2. WINDOW SIZE: Full HD Screen dikhayenge
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--start-maximized")
-
-    # 3. ANTI-DETECTION FLAGS (Crucial for FB)
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled") # Automation flag chupana
+    
+    # Anti-Detection
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
 
-    # 4. RENDER SERVER FLAGS (Required)
-    chrome_options.add_argument("--headless=new") # Server pe screen nahi hoti, isliye ye zaroori hai
+    # Server Flags
+    chrome_options.add_argument("--headless=new") 
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     
-    # Paths setup for Docker
     chromium_path = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
     chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
 
     service = Service(chromedriver_path)
     try:
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        
-        # Extra Step: Navigator property hack to hide Selenium completely
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        
         return driver
     except Exception as e:
         return None
 
 # --- ACTION LOGIC ---
 def send_message_safely(driver, text):
-    # Updated Selectors for 2024/2025 FB Layout
+    # Updated Selectors
     selectors = [
         'div[aria-label="Message"]', 
         'div[role="textbox"]', 
@@ -135,11 +126,10 @@ def send_message_safely(driver, text):
             
     if msg_box:
         try:
-            # JavaScript Focus (More reliable)
             driver.execute_script("arguments[0].focus();", msg_box)
             actions = ActionChains(driver)
             actions.send_keys(text)
-            time.sleep(1) # Typing pause
+            time.sleep(1)
             actions.send_keys(Keys.RETURN)
             actions.perform()
             return True
@@ -149,7 +139,7 @@ def send_message_safely(driver, text):
 
 # --- BACKGROUND WORKER ---
 def run_background_task(task_id, cookie_str, url, msg, delay, is_infinite):
-    manager.log_update(task_id, "Starting Stealth Driver...")
+    manager.log_update(task_id, "Starting Driver...")
     driver = get_driver()
     
     if not driver:
@@ -157,10 +147,8 @@ def run_background_task(task_id, cookie_str, url, msg, delay, is_infinite):
         return
 
     try:
-        # 1. Open FB Home first
         driver.get("https://www.facebook.com/")
         
-        # 2. Add Cookies
         cookies = parse_cookies(cookie_str)
         if not cookies:
             manager.log_update(task_id, "Invalid Cookie Format!")
@@ -170,12 +158,11 @@ def run_background_task(task_id, cookie_str, url, msg, delay, is_infinite):
             try: driver.add_cookie(c)
             except: pass
         
-        # 3. Reload to apply cookies
-        manager.log_update(task_id, "Applying Cookies & Loading Chat...")
+        manager.log_update(task_id, "Loading URL...")
         driver.get(url)
-        time.sleep(10) # Wait for full load
+        time.sleep(10) 
         
-        # DEBUG: Take screenshot to see if login worked
+        # Take Screenshot 1 (Load Check)
         manager.update_screenshot(task_id, driver)
         
         keep_running = True
@@ -183,7 +170,7 @@ def run_background_task(task_id, cookie_str, url, msg, delay, is_infinite):
             if manager.tasks[task_id]["stop"]:
                 break
 
-            # Try to click any "Got it" or "Notification" popups
+            # Popup Closer
             try:
                 popups = driver.find_elements(By.XPATH, "//div[@aria-label='Close' or text()='Got it']")
                 for p in popups: p.click()
@@ -202,8 +189,8 @@ def run_background_task(task_id, cookie_str, url, msg, delay, is_infinite):
                 else:
                     time.sleep(delay)
             else:
-                manager.log_update(task_id, "Element not found. Retrying... (Check Screenshot)")
-                manager.update_screenshot(task_id, driver) # Update screenshot on fail
+                manager.log_update(task_id, "Element Not Found (See Screenshot)")
+                manager.update_screenshot(task_id, driver) 
                 time.sleep(5)
 
     except Exception as e:
@@ -247,9 +234,10 @@ with tab2:
         if task:
             st.info(f"Status: {task['status']} | Sent: {task['count']}")
             
-            # Screenshot Display
+            # --- FIX IS HERE ---
             if task['screenshot'] and os.path.exists(task['screenshot']):
-                st.image(task['screenshot'], caption="Bot's View (Server)", use_column_width=True)
+                # use_column_width hatakar use_container_width kar diya
+                st.image(task['screenshot'], caption="Bot's View (Server)", use_container_width=True)
             else:
                 st.warning("No screenshot yet (Wait 10-15s)")
                 
