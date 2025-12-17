@@ -12,8 +12,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Background FB Sender", layout="centered")
-st.title("FB Sender (Dockerized 🐳)")
+st.set_page_config(page_title="FB Pro Sender", layout="centered")
+st.title("FB Sender (Anti-Detect Mode 🛡️)")
 
 # --- GLOBAL TASK MANAGER ---
 @st.cache_resource
@@ -28,7 +28,7 @@ class TaskManager:
             "logs": [],
             "count": 0,
             "stop": False,
-            "start_time": datetime.datetime.now()
+            "screenshot": None
         }
         return task_id
 
@@ -40,6 +40,12 @@ class TaskManager:
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
             self.tasks[task_id]["logs"].append(f"[{timestamp}] {message}")
 
+    def update_screenshot(self, task_id, driver):
+        if task_id in self.tasks:
+            filename = f"screen_{task_id}.png"
+            driver.save_screenshot(filename)
+            self.tasks[task_id]["screenshot"] = filename
+
     def stop_task(self, task_id):
         if task_id in self.tasks:
             self.tasks[task_id]["stop"] = True
@@ -47,66 +53,78 @@ class TaskManager:
 
 manager = TaskManager()
 
-# --- SELENIUM HELPERS (Docker Optimized) ---
+# --- COOKIE PARSER ---
 def parse_cookies(cookie_string):
     cookies = []
     try:
-        items = cookie_string.split(';')
-        for item in items:
-            if '=' in item:
-                name, value = item.strip().split('=', 1)
-                cookies.append({'name': name, 'value': value, 'domain': '.facebook.com'})
+        # Handling both Netscape format and key=value; format
+        lines = cookie_string.split('\n')
+        for line in lines:
+            parts = line.split('\t')
+            if len(parts) >= 7: # Netscape format
+                cookies.append({
+                    'name': parts[5], 
+                    'value': parts[6].strip(), 
+                    'domain': parts[0]
+                })
+        
+        if not cookies: # Try simple format key=value;
+            items = cookie_string.split(';')
+            for item in items:
+                if '=' in item:
+                    name, value = item.strip().split('=', 1)
+                    cookies.append({'name': name, 'value': value, 'domain': '.facebook.com'})
         return cookies
     except:
         return []
 
+# --- DRIVER SETUP (The Magic Part 🎩) ---
 def get_driver():
     chrome_options = Options()
-    # Docker/Server ke liye ye flags zaroori hain
-    chrome_options.add_argument("--headless=new") 
+    
+    # 1. HEADERS: Make it look like a Real Windows 10 PC
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    chrome_options.add_argument(f'user-agent={user_agent}')
+    
+    # 2. WINDOW SIZE: Full HD Screen dikhayenge
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--start-maximized")
+
+    # 3. ANTI-DETECTION FLAGS (Crucial for FB)
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled") # Automation flag chupana
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+
+    # 4. RENDER SERVER FLAGS (Required)
+    chrome_options.add_argument("--headless=new") # Server pe screen nahi hoti, isliye ye zaroori hai
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-extensions")
     
-    # Dockerfile me humne paths set kiye hain, unhe use karein
-    # Local run ke liye fallback rakha hai
+    # Paths setup for Docker
     chromium_path = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
     chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
 
-    # Local Windows support ke liye check (Optional)
-    if not os.path.exists(chromium_path):
-        # Agar local windows par chala rahe ho to path adjust karein
-        pass 
-
-    chrome_options.binary_location = chromium_path
     service = Service(chromedriver_path)
-    
     try:
-        return webdriver.Chrome(service=service, options=chrome_options)
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        # Extra Step: Navigator property hack to hide Selenium completely
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+        return driver
     except Exception as e:
-        print(f"Driver Error: {e}")
         return None
 
-def hunt_down_buttons(driver, task_id):
-    try:
-        xpaths = [
-            "//div[@role='button']//span[contains(text(), 'Continue')]",
-            "//*[contains(text(), 'restore messages')]",
-            "//div[@aria-label='Continue']",
-            "//div[@aria-label='Close']"
-        ]
-        for xpath in xpaths:
-            btns = driver.find_elements(By.XPATH, xpath)
-            for btn in btns:
-                if btn.is_displayed():
-                    driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(1)
-    except:
-        pass
-
+# --- ACTION LOGIC ---
 def send_message_safely(driver, text):
-    selectors = ['div[aria-label="Message"]', 'div[contenteditable="true"]', 'div[role="textbox"]']
+    # Updated Selectors for 2024/2025 FB Layout
+    selectors = [
+        'div[aria-label="Message"]', 
+        'div[role="textbox"]', 
+        'div[contenteditable="true"]',
+        'p[class*="xdj266r"]'
+    ]
     msg_box = None
     for selector in selectors:
         try:
@@ -117,9 +135,11 @@ def send_message_safely(driver, text):
             
     if msg_box:
         try:
+            # JavaScript Focus (More reliable)
             driver.execute_script("arguments[0].focus();", msg_box)
             actions = ActionChains(driver)
             actions.send_keys(text)
+            time.sleep(1) # Typing pause
             actions.send_keys(Keys.RETURN)
             actions.perform()
             return True
@@ -129,39 +149,52 @@ def send_message_safely(driver, text):
 
 # --- BACKGROUND WORKER ---
 def run_background_task(task_id, cookie_str, url, msg, delay, is_infinite):
-    manager.log_update(task_id, "Starting Dockerized Driver...")
+    manager.log_update(task_id, "Starting Stealth Driver...")
     driver = get_driver()
     
     if not driver:
-        manager.log_update(task_id, "Critical Error: Driver failed to start.")
-        manager.tasks[task_id]["status"] = "Failed"
+        manager.tasks[task_id]["status"] = "Driver Failed"
         return
 
     try:
+        # 1. Open FB Home first
         driver.get("https://www.facebook.com/")
+        
+        # 2. Add Cookies
         cookies = parse_cookies(cookie_str)
+        if not cookies:
+            manager.log_update(task_id, "Invalid Cookie Format!")
+            return
+            
         for c in cookies:
             try: driver.add_cookie(c)
             except: pass
         
-        manager.log_update(task_id, "Navigating...")
+        # 3. Reload to apply cookies
+        manager.log_update(task_id, "Applying Cookies & Loading Chat...")
         driver.get(url)
-        time.sleep(5)
+        time.sleep(10) # Wait for full load
         
-        hunt_down_buttons(driver, task_id)
+        # DEBUG: Take screenshot to see if login worked
+        manager.update_screenshot(task_id, driver)
         
         keep_running = True
         while keep_running:
             if manager.tasks[task_id]["stop"]:
-                manager.log_update(task_id, "Stopped.")
                 break
+
+            # Try to click any "Got it" or "Notification" popups
+            try:
+                popups = driver.find_elements(By.XPATH, "//div[@aria-label='Close' or text()='Got it']")
+                for p in popups: p.click()
+            except: pass
 
             success = send_message_safely(driver, msg)
             
             if success:
                 manager.tasks[task_id]["count"] += 1
                 cnt = manager.tasks[task_id]["count"]
-                manager.log_update(task_id, f"Sent #{cnt}")
+                manager.log_update(task_id, f"Sent Message #{cnt}")
                 
                 if not is_infinite:
                     keep_running = False
@@ -169,34 +202,33 @@ def run_background_task(task_id, cookie_str, url, msg, delay, is_infinite):
                 else:
                     time.sleep(delay)
             else:
-                manager.log_update(task_id, "Retry sending...")
+                manager.log_update(task_id, "Element not found. Retrying... (Check Screenshot)")
+                manager.update_screenshot(task_id, driver) # Update screenshot on fail
                 time.sleep(5)
-                hunt_down_buttons(driver, task_id)
 
     except Exception as e:
-        manager.log_update(task_id, f"Err: {str(e)}")
+        manager.log_update(task_id, f"Error: {str(e)}")
         manager.tasks[task_id]["status"] = "Error"
     finally:
         driver.quit()
         if manager.tasks[task_id]["status"] == "Running":
             manager.tasks[task_id]["status"] = "Finished"
 
-# --- UI TABS ---
-tab1, tab2 = st.tabs(["🆕 New Task", "🔍 Check Status"])
+# --- UI ---
+tab1, tab2 = st.tabs(["🚀 Launch", "👀 Monitor"])
 
 with tab1:
-    st.subheader("Start New Automation")
-    cookie_input = st.text_area("Cookie", height=70)
-    target_url = st.text_input("Chat URL")
-    message_text = st.text_input("Message", "Hello!")
-    
+    st.subheader("New Automation Task")
+    cookie_input = st.text_area("Paste Cookies Here", height=100)
+    target_url = st.text_input("Facebook Chat/Group URL")
+    message_text = st.text_input("Message to Send")
     c1, c2 = st.columns(2)
     enable_infinite = c1.checkbox("Infinite Loop", False)
-    delay_time = c2.number_input("Delay (sec)", 2, 60, 2)
+    delay_time = c2.number_input("Delay (Seconds)", 5, 120, 10)
 
-    if st.button("🚀 Start"):
+    if st.button("Start Task"):
         if not cookie_input or not target_url:
-            st.error("Fill fields")
+            st.error("Please fill required fields")
         else:
             new_id = manager.create_task()
             t = threading.Thread(
@@ -204,20 +236,27 @@ with tab1:
                 args=(new_id, cookie_input, target_url, message_text, delay_time, enable_infinite)
             )
             t.start()
-            st.success(f"Task ID: **{new_id}**")
+            st.success(f"Started! ID: {new_id}")
 
 with tab2:
-    st.subheader("Monitor")
-    check_id = st.text_input("Enter Task ID")
-    if st.button("Check") or check_id:
+    st.subheader("Live Status")
+    check_id = st.text_input("Task ID")
+    
+    if st.button("Refresh") or check_id:
         task = manager.get_task(check_id)
         if task:
-            st.write(f"Status: {task['status']} | Sent: {task['count']}")
-            st.text_area("Logs", "\n".join(task['logs'][-10:]), height=150)
+            st.info(f"Status: {task['status']} | Sent: {task['count']}")
+            
+            # Screenshot Display
+            if task['screenshot'] and os.path.exists(task['screenshot']):
+                st.image(task['screenshot'], caption="Bot's View (Server)", use_column_width=True)
+            else:
+                st.warning("No screenshot yet (Wait 10-15s)")
+                
+            st.code("\n".join(task['logs'][-8:]))
+            
             if task['status'] == "Running":
-                if st.button("🛑 Stop"):
+                if st.button("Stop"):
                     manager.stop_task(check_id)
                     st.rerun()
-        elif check_id:
-            st.error("ID Not Found")
-                
+            
